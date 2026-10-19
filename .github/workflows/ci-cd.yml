@@ -1,0 +1,141 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  NODE_VERSION: '24'
+
+jobs:
+  pipeline:
+    name: check, package, prove
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the commit that was pushed
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # Caches ~/.npm keyed on package-lock.json, so an unchanged lockfile
+          # means no download on the next run.
+          cache: npm
+
+      - name: Work out the tags for this commit
+        id: meta
+        run: |
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Install exactly what the lockfile says
+        run: npm ci
+
+      # ---------------------------------------------------------------- check
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      # -------------------------------------------------------------- package
+      - name: Sign in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # Issued to this run by GitHub. There is no secret to create.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the image and push it
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+
+          tags: |
+            ${{ steps.meta.outputs.image }}:sha-${{ steps.meta.outputs.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+            GIT_SHA=${{ steps.meta.outputs.sha }}
+
+      # ---------------------------------------------------------------- prove
+      - name: Run the published image and check it is this commit
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}:sha-${{ steps.meta.outputs.sha }}
+          EXPECTED_SHA: ${{ steps.meta.outputs.sha }}
+          EXPECTED_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Pulled rather than reused from the local build cache, so what is
+          # tested is what the registry actually holds.
+          docker pull "$IMAGE"
+          docker run -d --name verify -p 3000:3000 "$IMAGE"
+
+          # The app takes a moment to listen. Poll instead of sleeping a fixed
+          # number of seconds, which is either too short on a slow runner or
+          # wasted time on a fast one.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+              echo "answered after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::no response from /health after 30s"
+              docker logs verify
+              exit 1
+            fi
+            sleep 1
+          done
+
+          BODY=$(curl -fsS http://localhost:3000/health)
+          echo "GET /health -> $BODY"
+
+          ACTUAL_SHA=$(echo "$BODY" | jq -r .commit)
+          ACTUAL_VERSION=$(echo "$BODY" | jq -r .version)
+
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::the running image reports commit $ACTUAL_SHA, expected $EXPECTED_SHA"
+            exit 1
+          fi
+          if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::the running image reports version $ACTUAL_VERSION, expected $EXPECTED_VERSION"
+            exit 1
+          fi
+
+          echo "proved: ${ACTUAL_VERSION} / ${ACTUAL_SHA} is running, and it is this commit"
+
+      - name: Stop the container
+        # Runs even when the check above failed, so a red run does not leave
+        # the container behind.
+        if: always()
+        run: docker rm -f verify || true
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ job.status }}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`${{ steps.meta.outputs.sha }}\` |"
+            echo "| version | \`${{ steps.meta.outputs.version }}\` |"
+            echo "| image | \`${{ steps.meta.outputs.image }}:sha-${{ steps.meta.outputs.sha }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

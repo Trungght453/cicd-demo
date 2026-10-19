@@ -1,0 +1,42 @@
+# Compiled output
+/dist
+/build
+
+# Dependencies
+/node_modules
+
+# Logs
+/logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment — never commit real values. The pipeline injects APP_VERSION and
+# GIT_SHA; anything secret belongs in repository secrets, not here.
+.env
+.env.*
+!.env.example
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDE
+/.idea
+/.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tooling caches
+/.cache
+*.tsbuildinfo
+.oxlintcache

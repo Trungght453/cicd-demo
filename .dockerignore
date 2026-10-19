@@ -1,0 +1,27 @@
+# Keep the build context small and the image reproducible.
+
+# Installed inside the image instead, for the image's own platform.
+node_modules
+
+# Built inside the image. Copying a local dist would let whatever was last
+# compiled on a laptop end up in a released image.
+dist
+
+.git
+.github
+.gitignore
+.gitattributes
+
+*.log
+coverage
+.env
+.env.*
+
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+Dockerfile
+.dockerignore
+README.md
