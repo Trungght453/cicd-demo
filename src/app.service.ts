@@ -14,13 +14,13 @@ export interface Greeting {
 // branches on it, so changing it cannot break a caller. Compare GREETING with
 // Health.status below, which is a contract: machines read it and decide things
 // from it, so it is pinned by a test and changing it is a breaking change.
-const GREETING = 'Hello';
+const GREETING = 'This is news from ci cd';
 
 @Injectable()
 export class AppService {
   getHealth(): Health {
     return {
-      status: 'healthy',
+      status: 'ok',
       // Stamped onto the artifact at build time rather than read from
       // package.json, so what the endpoint reports is what the pipeline
       // actually built. There is no pipeline when running locally, hence the
