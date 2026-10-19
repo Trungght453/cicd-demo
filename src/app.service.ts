@@ -20,7 +20,7 @@ const GREETING = 'Hello';
 export class AppService {
   getHealth(): Health {
     return {
-      status: 'ok',
+      status: 'healthy',
       // Stamped onto the artifact at build time rather than read from
       // package.json, so what the endpoint reports is what the pipeline
       // actually built. There is no pipeline when running locally, hence the
